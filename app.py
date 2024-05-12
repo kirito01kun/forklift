@@ -5,17 +5,22 @@ from PySide6.QtCore import QThread, Signal, Qt
 from confluent_kafka import Consumer, KafkaError
 
 class Square(QWidget):
-    def __init__(self, color=QColor("red")):
+    def __init__(self, number, color=QColor("red")):
         super().__init__()
         self.color = color
+        self.number = number  # Number for the square
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.fillRect(event.rect(), QBrush(self.color))
+        # Draw the number in the center of the square
+        painter.drawText(event.rect(), Qt.AlignCenter, str(self.number))
 
     def set_color(self, color):
         self.color = color
         self.update()
+
+
 
 class KafkaSquareConsumer(QThread):
     message_received = Signal(str)
@@ -175,12 +180,17 @@ class MainWindow(QMainWindow):
         event.accept()
 
     def create_squares_grid_layout(self):
-        for row in range(4):
-            for col in range(8):
-                square = Square()
+        for level in range(3, -1, -1):  # Iterate over levels from L3 to L0
+            for col in range(8):  # Iterate over locations from 1 to 8
+                rack_name = 'A'  # Assuming rack name is 'A'
+                location_number = col + 1
+                square_number = f"{rack_name}{level}{location_number}"
+                square = Square(square_number)  # Pass the square number to the Square constructor
                 square.setFixedSize(50, 50)
+                row = 3 - level  # Calculate row based on level (L3 = row 0, L2 = row 1, ...)
                 self.grid_layout.addWidget(square, row, col)
                 self.squares.append(square)  # Add squares to the list
+
 
     def move_to_previous_rack(self):
         self.current_rack_index -= 1
