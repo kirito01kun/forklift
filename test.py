@@ -20,7 +20,6 @@ class Square(QWidget):
         self.color = color
         self.update()
 
-
 class KafkaSquareConsumer(QThread):
     message_received = Signal(str)
     error_occurred = Signal(str)
@@ -70,6 +69,10 @@ class KafkaSquareConsumer(QThread):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+
+        self.racks = ['A', 'B', 'C', 'D']  # List of rack names
+        self.current_rack_index = 0
+        self.rack_colors = {}  # Dictionary to store colors for each rack
 
         self.bootstrap_servers = 'localhost:9092'
         self.group_id = 'test-group'
@@ -124,7 +127,8 @@ class MainWindow(QMainWindow):
         # Create squares grid layout
         self.grid_layout = QGridLayout()
         self.squares = []  # Initialize the squares list
-        self.create_squares_grid_layout()  # Populate the grid with squares
+
+        self.create_squares_grid_layout(self.racks[self.current_rack_index])  # Initially populate with the first rack
 
         self.squares_layout.addLayout(self.grid_layout)
 
@@ -150,10 +154,6 @@ class MainWindow(QMainWindow):
         self.prev_rack_button.clicked.connect(self.move_to_previous_rack)
         self.next_rack_button.clicked.connect(self.move_to_next_rack)
 
-        self.current_rack_index = 0
-        self.racks = ['A', 'B', 'C', 'D']  # List of rack names
-        self.rack_colors = {}  # Dictionary to store colors for each rack
-
     def start_consumer(self):
         if not self.kafka_color_consumer.isRunning():
             self.kafka_color_consumer.start()
@@ -163,11 +163,9 @@ class MainWindow(QMainWindow):
     def update_colors(self, message):
         rack_name = message[0]  # Extract the first character to identify the rack
         colors_str = message[1:]  # Extract the rest of the message as colors string
-        colors = colors_str.split(",")
-        self.rack_colors[rack_name] = colors  # Store colors for the received rack
+        self.rack_colors[rack_name] = colors_str  # Store colors for the received rack
         if self.racks[self.current_rack_index] == rack_name:
             self.update_squares_container()  # Update squares if the current rack matches the received rack
-
 
     def display_error(self, error_message):
         self.error_label.setText(error_message)
@@ -182,10 +180,9 @@ class MainWindow(QMainWindow):
 
         event.accept()
 
-    def create_squares_grid_layout(self):
+    def create_squares_grid_layout(self, rack_name):
         for level in range(3, -1, -1):  # Iterate over levels from L3 to L0
             for col in range(8):  # Iterate over locations from 1 to 8
-                rack_name = 'A'  # Assuming rack name is 'A'
                 location_number = col + 1
                 square_number = f"{rack_name}{level}{location_number}"
                 square = Square(square_number)  # Pass the square number to the Square constructor
@@ -193,7 +190,6 @@ class MainWindow(QMainWindow):
                 row = 3 - level  # Calculate row based on level (L3 = row 0, L2 = row 1, ...)
                 self.grid_layout.addWidget(square, row, col)
                 self.squares.append(square)  # Add squares to the list
-
 
     def move_to_previous_rack(self):
         self.current_rack_index -= 1
@@ -216,19 +212,17 @@ class MainWindow(QMainWindow):
 
         rack_name = self.racks[self.current_rack_index]
         colors_str = self.rack_colors.get(rack_name, "0" * 32)  # Get colors for the current rack
-        colors = ["red" if digit == '0' else "green" for digit in colors_str[0]]
-        self.squares.clear()
+        colors = ["red" if digit == '0' else "green" for digit in colors_str]
+        self.squares.clear()  # Clear the squares list
 
         # Add rack label
         rack_label = QLabel(f"Current Rack: {rack_name}")
         layout.addWidget(rack_label)
 
-        self.create_squares_grid_layout()  # Repopulate the grid with squares
+        # Repopulate the grid with squares with the correct rack name
+        self.create_squares_grid_layout(rack_name)
         for square, color in zip(self.squares, colors):
             square.set_color(QColor(color))
-
-
-
 
 app = QApplication(sys.argv)
 window = MainWindow()
