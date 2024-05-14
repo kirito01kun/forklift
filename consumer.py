@@ -24,7 +24,7 @@ def main():
     # Kafka configuration
     bootstrap_servers = 'localhost:9092'
     group_id = 'test-group'
-    topic = 'test'
+    topic = 'SquareColorViz'
 
     # Create Kafka Consumer instance
     conf = {'bootstrap.servers': bootstrap_servers, 'group.id': group_id}

@@ -21,7 +21,6 @@ class Square(QWidget):
         self.update()
 
 
-
 class KafkaSquareConsumer(QThread):
     message_received = Signal(str)
     error_occurred = Signal(str)
@@ -38,7 +37,10 @@ class KafkaSquareConsumer(QThread):
         consumer = Consumer({
             'bootstrap.servers': self.bootstrap_servers,
             'group.id': self.group_id,
-            'auto.offset.reset': 'earliest'
+            'auto.offset.reset': 'earliest',
+            'enable.auto.commit': False,  # Disable auto-commit
+            'session.timeout.ms': 6000,   # Increase session timeout
+            'max.poll.interval.ms': 10000 # Increase poll interval to handle longer processing times
         })
         consumer.subscribe([self.topic])
 
@@ -56,6 +58,9 @@ class KafkaSquareConsumer(QThread):
 
             message = msg.value().decode("utf-8")
             self.message_received.emit(message)
+
+            # Manually commit the message offsets
+            consumer.commit(msg)
 
         consumer.close()
 
@@ -159,8 +164,6 @@ class MainWindow(QMainWindow):
         rack_name = message[0]  # Extract the first character to identify the rack
         colors_str = message[1:]  # Extract the rest of the message as colors string
         colors = colors_str.split(",")
-        print("Rack Name:", rack_name)
-        print("Colors:", colors)
         self.rack_colors[rack_name] = colors  # Store colors for the received rack
         if self.racks[self.current_rack_index] == rack_name:
             self.update_squares_container()  # Update squares if the current rack matches the received rack
@@ -213,10 +216,8 @@ class MainWindow(QMainWindow):
 
         rack_name = self.racks[self.current_rack_index]
         colors_str = self.rack_colors.get(rack_name, "0" * 32)  # Get colors for the current rack
-        print(colors_str)
         colors = ["red" if digit == '0' else "green" for digit in colors_str[0]]
-        print("clr : ", colors)
-        self.squares.clear()  # Clear the squares list
+        self.squares.clear()
 
         # Add rack label
         rack_label = QLabel(f"Current Rack: {rack_name}")
