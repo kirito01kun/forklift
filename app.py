@@ -1,5 +1,5 @@
 import sys
-from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QGridLayout, QPushButton, QLabel, QHBoxLayout
+from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QGridLayout, QPushButton, QLabel, QHBoxLayout, QStackedWidget
 from PySide6.QtGui import QPainter, QColor, QBrush
 from PySide6.QtCore import QThread, Signal, Qt
 from confluent_kafka import Consumer, KafkaError
@@ -8,12 +8,11 @@ class Square(QWidget):
     def __init__(self, number, color=QColor("red")):
         super().__init__()
         self.color = color
-        self.number = number  # Number for the square
+        self.number = number
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.fillRect(event.rect(), QBrush(self.color))
-        # Draw the number in the center of the square
         painter.drawText(event.rect(), Qt.AlignCenter, str(self.number))
 
     def set_color(self, color):
@@ -37,9 +36,9 @@ class KafkaSquareConsumer(QThread):
             'bootstrap.servers': self.bootstrap_servers,
             'group.id': self.group_id,
             'auto.offset.reset': 'earliest',
-            'enable.auto.commit': False,  # Disable auto-commit
-            'session.timeout.ms': 6000,   # Increase session timeout
-            'max.poll.interval.ms': 10000 # Increase poll interval to handle longer processing times
+            'enable.auto.commit': False,
+            'session.timeout.ms': 6000,
+            'max.poll.interval.ms': 10000
         })
         consumer.subscribe([self.topic])
 
@@ -58,7 +57,6 @@ class KafkaSquareConsumer(QThread):
             message = msg.value().decode("utf-8")
             self.message_received.emit(message)
 
-            # Manually commit the message offsets
             consumer.commit(msg)
 
         consumer.close()
@@ -66,36 +64,120 @@ class KafkaSquareConsumer(QThread):
     def stop(self):
         self.running = False
 
+class HomePage(QWidget):
+    def __init__(self, main_window):
+        super().__init__()
+        self.main_window = main_window
+
+        layout = QVBoxLayout(self)
+
+        # Start Kafka Consumer Button
+        self.start_button = QPushButton("Start Kafka Consumer")
+        layout.addWidget(self.start_button)
+        self.start_button.clicked.connect(self.main_window.start_consumer)
+
+        self.squares_container = QWidget()
+        self.squares_container.setStyleSheet("background-color: #f0f0f0; border: 1px solid #ccc; border-radius: 10px; padding: 10px;")
+        self.squares_container.setFixedSize(500, 300)
+        self.squares_layout = QVBoxLayout(self.squares_container)
+        self.squares_container.setLayout(self.squares_layout)
+
+        layout.addWidget(self.squares_container, alignment=Qt.AlignTop | Qt.AlignLeft)
+
+        self.grid_layout = QGridLayout()
+        self.squares = []
+
+        self.create_squares_grid_layout(self.main_window.racks[self.main_window.current_rack_index])
+        self.squares_layout.addLayout(self.grid_layout)
+
+        # Add navigation buttons
+        navigation_layout = QHBoxLayout()
+        self.prev_rack_button = QPushButton("Previous Rack")
+        self.next_rack_button = QPushButton("Next Rack")
+        navigation_layout.addWidget(self.prev_rack_button)
+        navigation_layout.addWidget(self.next_rack_button)
+        layout.addLayout(navigation_layout)
+
+        # Connect buttons to slots in main_window
+        self.prev_rack_button.clicked.connect(self.main_window.move_to_previous_rack)
+        self.next_rack_button.clicked.connect(self.main_window.move_to_next_rack)
+
+    def create_squares_grid_layout(self, rack_name):
+        for level in range(3, -1, -1):
+            for col in range(8):
+                location_number = col + 1
+                square_number = f"{rack_name}{level}{location_number}"
+                square = Square(square_number)
+                square.setFixedSize(50, 50)
+                row = 3 - level
+                self.grid_layout.addWidget(square, row, col)
+                self.squares.append(square)
+
+    def update_squares_container(self, rack_name, colors_str):
+        colors = ["red" if digit == '0' else "green" for digit in colors_str]
+        self.squares.clear()
+
+        for i in reversed(range(self.squares_layout.count())):
+            item = self.squares_layout.itemAt(i)
+            if item is not None and item.widget() is not None:
+                item.widget().setParent(None)
+
+        rack_label = QLabel(f"Current Rack: {rack_name}")
+        self.squares_layout.addWidget(rack_label)
+
+        self.create_squares_grid_layout(rack_name)
+        for square, color in zip(self.squares, colors):
+            square.set_color(QColor(color))
+
+class PutawayPage(QWidget):
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        label = QLabel("Putaway Page")
+        layout.addWidget(label)
+
+class PickupPage(QWidget):
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        label = QLabel("Pickup Page")
+        layout.addWidget(label)
+
+class LocationTransferPage(QWidget):
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        label = QLabel("Location Transfer Page")
+        layout.addWidget(label)
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.racks = ['A', 'B', 'C', 'D']  # List of rack names
+        self.racks = ['A', 'B', 'C', 'D']
         self.current_rack_index = 0
-        self.rack_colors = {}  # Dictionary to store colors for each rack
+        self.rack_colors = {}
 
         self.bootstrap_servers = 'localhost:9092'
         self.group_id = 'test-group'
-        self.color_topic = 'SquareColorViz'  # Topic for squares' colors visualization
+        self.color_topic = 'SquareColorViz'
 
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
 
-        layout = QHBoxLayout()  # Main layout is now a QHBoxLayout
-        main_widget.setLayout(layout)
+        layout = QHBoxLayout(main_widget)
 
-        # Left side menu
         left_menu_widget = QWidget()
         left_menu_layout = QVBoxLayout(left_menu_widget)
         left_menu_layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(left_menu_widget)
 
-        self.start_button = QPushButton("Start Kafka Consumer")
+        self.home_button = QPushButton("Home")
         self.putaway_button = QPushButton("Putaway")
         self.pickup_button = QPushButton("Pickup")
         self.location_transfer_button = QPushButton("Location Transfer")
 
-        left_menu_layout.addWidget(self.start_button)
+        left_menu_layout.addWidget(self.home_button)
         left_menu_layout.addWidget(self.putaway_button)
         left_menu_layout.addWidget(self.pickup_button)
         left_menu_layout.addWidget(self.location_transfer_button)
@@ -106,123 +188,63 @@ class MainWindow(QMainWindow):
         self.error_label = QLabel()
         left_menu_layout.addWidget(self.error_label)
 
-        # Set fixed width for the left menu
-        left_menu_width = 200
-        left_menu_widget.setFixedWidth(left_menu_width)
+        left_menu_widget.setFixedWidth(200)
 
-        # Right side content
-        right_content_widget = QWidget()
-        right_content_layout = QVBoxLayout(right_content_widget)
-        layout.addWidget(right_content_widget)
+        self.stacked_widget = QStackedWidget()
+        layout.addWidget(self.stacked_widget)
 
-        # Create a widget to hold the grid layout and its content (card-like design)
-        self.squares_container = QWidget()
-        self.squares_container.setStyleSheet("background-color: #f0f0f0; border: 1px solid #ccc; border-radius: 10px; padding: 10px;")
-        self.squares_container.setFixedSize(500, 300)  # Set fixed size for the squares container
-        self.squares_layout = QVBoxLayout(self.squares_container)
-        self.squares_container.setLayout(self.squares_layout)
+        self.home_page = HomePage(self)
+        self.putaway_page = PutawayPage()
+        self.pickup_page = PickupPage()
+        self.location_transfer_page = LocationTransferPage()
 
-        right_content_layout.addWidget(self.squares_container, alignment=Qt.AlignTop | Qt.AlignLeft)
+        self.stacked_widget.addWidget(self.home_page)
+        self.stacked_widget.addWidget(self.putaway_page)
+        self.stacked_widget.addWidget(self.pickup_page)
+        self.stacked_widget.addWidget(self.location_transfer_page)
 
-        # Create squares grid layout
-        self.grid_layout = QGridLayout()
-        self.squares = []  # Initialize the squares list
+        self.home_button.clicked.connect(lambda: self.stacked_widget.setCurrentWidget(self.home_page))
+        self.putaway_button.clicked.connect(lambda: self.stacked_widget.setCurrentWidget(self.putaway_page))
+        self.pickup_button.clicked.connect(lambda: self.stacked_widget.setCurrentWidget(self.pickup_page))
+        self.location_transfer_button.clicked.connect(lambda: self.stacked_widget.setCurrentWidget(self.location_transfer_page))
 
-        self.create_squares_grid_layout(self.racks[self.current_rack_index])  # Initially populate with the first rack
-
-        self.squares_layout.addLayout(self.grid_layout)
-
-        # Initialize Kafka consumer for squares' colors visualization
         self.kafka_color_consumer = KafkaSquareConsumer(self.bootstrap_servers, self.group_id, self.color_topic)
-        self.kafka_color_consumer.message_received.connect(self.update_colors)  # Connect the signal to the slot
+        self.kafka_color_consumer.message_received.connect(self.update_colors)
         self.kafka_color_consumer.error_occurred.connect(self.display_error)
-
-        # Connect buttons to slots
-        self.start_button.clicked.connect(self.start_consumer)
-        self.putaway_button.clicked.connect(lambda: self.print_button_clicked("Putaway"))
-        self.pickup_button.clicked.connect(lambda: self.print_button_clicked("Pickup"))
-        self.location_transfer_button.clicked.connect(lambda: self.print_button_clicked("Location Transfer"))
-
-        # Navigation buttons
-        self.prev_rack_button = QPushButton("Previous Rack")
-        self.next_rack_button = QPushButton("Next Rack")
-
-        left_menu_layout.addWidget(self.prev_rack_button)
-        left_menu_layout.addWidget(self.next_rack_button)
-
-        # Connect navigation buttons to slots
-        self.prev_rack_button.clicked.connect(self.move_to_previous_rack)
-        self.next_rack_button.clicked.connect(self.move_to_next_rack)
 
     def start_consumer(self):
         if not self.kafka_color_consumer.isRunning():
             self.kafka_color_consumer.start()
             self.status_label.setText("Consumer Status: Running")
-            self.start_button.setEnabled(False)
+            self.home_page.start_button.setEnabled(False)
 
     def update_colors(self, message):
-        rack_name = message[0]  # Extract the first character to identify the rack
-        colors_str = message[1:]  # Extract the rest of the message as colors string
-        self.rack_colors[rack_name] = colors_str  # Store colors for the received rack
+        rack_name = message[0]
+        colors_str = message[1:]
+        self.rack_colors[rack_name] = colors_str
         if self.racks[self.current_rack_index] == rack_name:
-            self.update_squares_container()  # Update squares if the current rack matches the received rack
+            self.home_page.update_squares_container(rack_name, colors_str)
 
     def display_error(self, error_message):
         self.error_label.setText(error_message)
-
-    def print_button_clicked(self, button_text):
-        print(f"{button_text} button clicked")
 
     def closeEvent(self, event):
         if self.kafka_color_consumer.isRunning():
             self.kafka_color_consumer.stop()
             self.kafka_color_consumer.wait()
-
         event.accept()
-
-    def create_squares_grid_layout(self, rack_name):
-        for level in range(3, -1, -1):  # Iterate over levels from L3 to L0
-            for col in range(8):  # Iterate over locations from 1 to 8
-                location_number = col + 1
-                square_number = f"{rack_name}{level}{location_number}"
-                square = Square(square_number)  # Pass the square number to the Square constructor
-                square.setFixedSize(50, 50)
-                row = 3 - level  # Calculate row based on level (L3 = row 0, L2 = row 1, ...)
-                self.grid_layout.addWidget(square, row, col)
-                self.squares.append(square)  # Add squares to the list
 
     def move_to_previous_rack(self):
         self.current_rack_index -= 1
         if self.current_rack_index < 0:
             self.current_rack_index = len(self.racks) - 1
-        self.update_squares_container()
+        self.home_page.update_squares_container(self.racks[self.current_rack_index], self.rack_colors.get(self.racks[self.current_rack_index], "0" * 32))
 
     def move_to_next_rack(self):
         self.current_rack_index += 1
         if self.current_rack_index >= len(self.racks):
             self.current_rack_index = 0
-        self.update_squares_container()
-
-    def update_squares_container(self):
-        layout = self.squares_layout
-        for i in reversed(range(layout.count())):
-            item = layout.itemAt(i)
-            if item is not None and item.widget() is not None:
-                item.widget().setParent(None)
-
-        rack_name = self.racks[self.current_rack_index]
-        colors_str = self.rack_colors.get(rack_name, "0" * 32)  # Get colors for the current rack
-        colors = ["red" if digit == '0' else "green" for digit in colors_str]
-        self.squares.clear()  # Clear the squares list
-
-        # Add rack label
-        rack_label = QLabel(f"Current Rack: {rack_name}")
-        layout.addWidget(rack_label)
-
-        # Repopulate the grid with squares with the correct rack name
-        self.create_squares_grid_layout(rack_name)
-        for square, color in zip(self.squares, colors):
-            square.set_color(QColor(color))
+        self.home_page.update_squares_container(self.racks[self.current_rack_index], self.rack_colors.get(self.racks[self.current_rack_index], "0" * 32))
 
 app = QApplication(sys.argv)
 window = MainWindow()
