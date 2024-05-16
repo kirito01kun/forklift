@@ -15,6 +15,7 @@ def main():
     # Kafka configuration
     bootstrap_servers = 'localhost:9092'
     topic = 'SquareColorViz'
+    #topic = 'LogForliftEvents'
 
     # Create Kafka Producer instance
     conf = {'bootstrap.servers': bootstrap_servers}

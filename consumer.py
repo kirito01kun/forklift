@@ -24,10 +24,14 @@ def main():
     # Kafka configuration
     bootstrap_servers = 'localhost:9092'
     group_id = 'test-group'
-    topic = 'SquareColorViz'
+    topic = 'LogForkliftEvents'
 
     # Create Kafka Consumer instance
-    conf = {'bootstrap.servers': bootstrap_servers, 'group.id': group_id}
+    conf = {
+        'bootstrap.servers': bootstrap_servers,
+        'group.id': group_id,
+        'auto.offset.reset': 'earliest'  # Start reading at the earliest message in the topic
+    }
     consumer = Consumer(**conf)
 
     # Consume messages
