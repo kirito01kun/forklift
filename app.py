@@ -1,5 +1,5 @@
 import sys
-from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QGridLayout, QPushButton, QLabel, QHBoxLayout, QStackedWidget
+from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QGridLayout, QPushButton, QLabel, QHBoxLayout, QStackedWidget, QScrollArea, QTextEdit
 from PySide6.QtGui import QPainter, QColor, QBrush
 from PySide6.QtCore import QThread, Signal, Qt
 from confluent_kafka import Consumer, KafkaError
@@ -64,6 +64,51 @@ class KafkaSquareConsumer(QThread):
     def stop(self):
         self.running = False
 
+class KafkaLogConsumer(QThread):
+    log_received = Signal(str)
+    error_occurred = Signal(str)
+
+    def __init__(self, bootstrap_servers, group_id, topic):
+        super().__init__()
+        self.bootstrap_servers = bootstrap_servers
+        self.group_id = group_id
+        self.topic = topic
+        self.running = False
+
+    def run(self):
+        self.running = True
+        consumer = Consumer({
+            'bootstrap.servers': self.bootstrap_servers,
+            'group.id': self.group_id,
+            'auto.offset.reset': 'earliest',
+            'enable.auto.commit': False,
+            'session.timeout.ms': 6000,
+            'max.poll.interval.ms': 10000
+        })
+        consumer.subscribe([self.topic])
+
+        while self.running:
+            msg = consumer.poll(timeout=1.0)
+
+            if msg is None:
+                continue
+            if msg.error():
+                if msg.error().code() == KafkaError._PARTITION_EOF:
+                    continue
+                else:
+                    self.error_occurred.emit(f'Error: {msg.error()}')
+                    break
+
+            message = msg.value().decode("utf-8")
+            self.log_received.emit(message)
+
+            consumer.commit(msg)
+
+        consumer.close()
+
+    def stop(self):
+        self.running = False
+
 class HomePage(QWidget):
     def __init__(self, main_window):
         super().__init__()
@@ -102,6 +147,20 @@ class HomePage(QWidget):
         self.prev_rack_button.clicked.connect(self.main_window.move_to_previous_rack)
         self.next_rack_button.clicked.connect(self.main_window.move_to_next_rack)
 
+        # Log container
+        self.log_container = QScrollArea()
+        self.log_container.setWidgetResizable(True)
+        self.log_widget = QWidget()
+        self.log_layout = QVBoxLayout(self.log_widget)
+        self.log_container.setWidget(self.log_widget)
+
+        # Add dummy logs
+        for i in range(20):
+            log_label = QLabel(f"Log entry {i+1}")
+            self.log_layout.addWidget(log_label)
+
+        layout.addWidget(self.log_container)
+
     def create_squares_grid_layout(self, rack_name):
         for level in range(3, -1, -1):
             for col in range(8):
@@ -128,6 +187,10 @@ class HomePage(QWidget):
         self.create_squares_grid_layout(rack_name)
         for square, color in zip(self.squares, colors):
             square.set_color(QColor(color))
+
+    def update_log_container(self, log_message):
+        log_label = QLabel(log_message)
+        self.log_layout.addWidget(log_label)
 
 class PutawayPage(QWidget):
     def __init__(self):
@@ -161,6 +224,7 @@ class MainWindow(QMainWindow):
         self.bootstrap_servers = 'localhost:9092'
         self.group_id = 'test-group'
         self.color_topic = 'SquareColorViz'
+        self.log_topic = 'SquareLogTopic'
 
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
@@ -212,9 +276,18 @@ class MainWindow(QMainWindow):
         self.kafka_color_consumer.message_received.connect(self.update_colors)
         self.kafka_color_consumer.error_occurred.connect(self.display_error)
 
+        self.kafka_log_consumer = KafkaLogConsumer(self.bootstrap_servers, self.group_id, self.log_topic)
+        self.kafka_log_consumer.log_received.connect(self.update_logs)
+        self.kafka_log_consumer.error_occurred.connect(self.display_error)
+
     def start_consumer(self):
         if not self.kafka_color_consumer.isRunning():
             self.kafka_color_consumer.start()
+            self.status_label.setText("Consumer Status: Running")
+            self.home_page.start_button.setEnabled(False)
+        
+        if not self.kafka_log_consumer.isRunning():
+            self.kafka_log_consumer.start()
             self.status_label.setText("Consumer Status: Running")
             self.home_page.start_button.setEnabled(False)
 
@@ -225,6 +298,9 @@ class MainWindow(QMainWindow):
         if self.racks[self.current_rack_index] == rack_name:
             self.home_page.update_squares_container(rack_name, colors_str)
 
+    def update_logs(self, log_message):
+        self.home_page.update_log_container(log_message)
+
     def display_error(self, error_message):
         self.error_label.setText(error_message)
 
@@ -232,6 +308,11 @@ class MainWindow(QMainWindow):
         if self.kafka_color_consumer.isRunning():
             self.kafka_color_consumer.stop()
             self.kafka_color_consumer.wait()
+        
+        if self.kafka_log_consumer.isRunning():
+            self.kafka_log_consumer.stop()
+            self.kafka_log_consumer.wait()
+
         event.accept()
 
     def move_to_previous_rack(self):
