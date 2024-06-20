@@ -3,7 +3,7 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, Q
 from PySide6.QtGui import QPainter, QColor, QBrush
 from PySide6.QtCore import QThread, Signal, Qt
 from confluent_kafka import Consumer, KafkaError, Producer
-
+# this is a cmnt
 class Square(QWidget):
     def __init__(self, number, color=QColor("red")):
         super().__init__()
@@ -81,11 +81,6 @@ class HomePage(QWidget):
 
         layout = QVBoxLayout(self)
 
-        # Start Kafka Consumer Button
-        self.start_button = QPushButton("Start Kafka Consumer")
-        layout.addWidget(self.start_button)
-        self.start_button.clicked.connect(self.main_window.start_consumer)
-
         self.squares_container = QWidget()
         self.squares_container.setStyleSheet("background-color: #f0f0f0; border: 1px solid #ccc; border-radius: 10px; padding: 10px;")
         self.squares_container.setFixedSize(500, 300)
@@ -153,11 +148,65 @@ class HomePage(QWidget):
         self.log_layout.addWidget(log_label)
 
 class PutawayPage(QWidget):
-    def __init__(self):
+    def __init__(self, main_window):
         super().__init__()
+        self.main_window = main_window
+        self.pallet_id = None
+        self.location_id = None
+
         layout = QVBoxLayout(self)
-        label = QLabel("Putaway Page")
-        layout.addWidget(label)
+        layout.setAlignment(Qt.AlignCenter)  # Centralize the layout
+        
+        self.pallet_label = QLabel("Scanning Pallet...")
+        self.pallet_label.setAlignment(Qt.AlignCenter)
+        self.pallet_label.setStyleSheet("QLabel { background-color : lightgray; border: 1px solid black; }")
+        self.pallet_label.setFixedSize(250, 50)
+        layout.addWidget(self.pallet_label)
+
+        self.location_label = QLabel("Scanning Location...")
+        self.location_label.setAlignment(Qt.AlignCenter)
+        self.location_label.setStyleSheet("QLabel { background-color : lightgray; border: 1px solid black; }")
+        self.location_label.setFixedSize(250, 50)
+        layout.addWidget(self.location_label)
+
+        self.submit_button = QPushButton("Submit")
+        self.submit_button.setEnabled(False)
+        layout.addWidget(self.submit_button)
+
+        self.pallet_label.mousePressEvent = self.scan_pallet
+        self.location_label.mousePressEvent = self.scan_location
+        self.submit_button.clicked.connect(self.submit_ids)
+
+    def scan_pallet(self, event):
+        self.pallet_id = "PAL009"  # Replace this with actual scanning logic
+        self.pallet_label.setText(self.pallet_id)
+        self.pallet_label.setStyleSheet("QLabel { background-color : lightgreen; border: 1px solid black; }")
+        self.check_ready_to_submit()
+
+    def scan_location(self, event):
+        self.location_id = "B04"  # Replace this with actual scanning logic
+        self.location_label.setText(self.location_id)
+        self.location_label.setStyleSheet("QLabel { background-color : lightgreen; border: 1px solid black; }")
+        self.check_ready_to_submit()
+
+    def check_ready_to_submit(self):
+        if self.pallet_id and self.location_id:
+            self.submit_button.setEnabled(True)
+
+    def submit_ids(self):
+        if self.pallet_id and self.location_id:
+            log_message = f"Putaway - Pallet: {self.pallet_id}, Location: {self.location_id}"
+            self.main_window.kafka_log_producer.produce_log(log_message)
+            self.main_window.home_page.update_log_container(log_message)
+            # Reset the labels and IDs
+            self.pallet_id = None
+            self.location_id = None
+            self.pallet_label.setText("Scanning Pallet...")
+            self.pallet_label.setStyleSheet("QLabel { background-color : lightgray; border: 1px solid black; }")
+            self.location_label.setText("Scanning Location...")
+            self.location_label.setStyleSheet("QLabel { background-color : lightgray; border: 1px solid black; }")
+            self.submit_button.setEnabled(False)
+
 
 class PickupPage(QWidget):
     def __init__(self):
@@ -167,11 +216,65 @@ class PickupPage(QWidget):
         layout.addWidget(label)
 
 class LocationTransferPage(QWidget):
-    def __init__(self):
+    def __init__(self, main_window):
         super().__init__()
+        self.main_window = main_window
+        self.sourceLocation_id = None
+        self.distinationLocation_id = None
+
         layout = QVBoxLayout(self)
-        label = QLabel("Location Transfer Page")
-        layout.addWidget(label)
+        layout.setAlignment(Qt.AlignCenter)  # Centralize the layout
+        
+        self.sourceLocation_label = QLabel("Scanning Source Location...")
+        self.sourceLocation_label.setAlignment(Qt.AlignCenter)
+        self.sourceLocation_label.setStyleSheet("QLabel { background-color : lightgray; border: 1px solid black; }")
+        self.sourceLocation_label.setFixedSize(350, 50)
+        layout.addWidget(self.sourceLocation_label)
+
+        self.distinationLocation_label = QLabel("Scanning Distination Location...")
+        self.distinationLocation_label.setAlignment(Qt.AlignCenter)
+        self.distinationLocation_label.setStyleSheet("QLabel { background-color : lightgray; border: 1px solid black; }")
+        self.distinationLocation_label.setFixedSize(350, 50)
+        layout.addWidget(self.distinationLocation_label)
+
+        self.submit_button = QPushButton("Submit")
+        self.submit_button.setEnabled(False)
+        layout.addWidget(self.submit_button)
+
+        self.sourceLocation_label.mousePressEvent = self.scan_sourceLocation
+        self.distinationLocation_label.mousePressEvent = self.scan_distinationLocation
+        self.submit_button.clicked.connect(self.submit_ids)
+
+    def scan_sourceLocation(self, event):
+        self.sourceLocation_id = "A09"  # Replace this with actual scanning logic
+        self.sourceLocation_label.setText(self.sourceLocation_id)
+        self.sourceLocation_label.setStyleSheet("QLabel { background-color : lightgreen; border: 1px solid black; }")
+        self.check_ready_to_submit()
+
+    def scan_distinationLocation(self, event):
+        self.distinationLocation_id = "B04"  # Replace this with actual scanning logic
+        self.distinationLocation_label.setText(self.distinationLocation_id)
+        self.distinationLocation_label.setStyleSheet("QLabel { background-color : lightgreen; border: 1px solid black; }")
+        self.check_ready_to_submit()
+
+    def check_ready_to_submit(self):
+        if self.sourceLocation_id and self.distinationLocation_id:
+            self.submit_button.setEnabled(True)
+
+    def submit_ids(self):
+        if self.sourceLocation_id and self.distinationLocation_id:
+            log_message = f"Location Transfer - Source: {self.sourceLocation_id}, Distination: {self.distinationLocation_id}"
+            self.main_window.kafka_log_producer.produce_log(log_message)
+            self.main_window.home_page.update_log_container(log_message)
+            # Reset the labels and IDs
+            self.sourceLocation_id = None
+            self.distinationLocation_id = None
+            self.sourceLocation_label.setText("Scan Source Location...")
+            self.sourceLocation_label.setStyleSheet("QLabel { background-color : lightgray; border: 1px solid black; }")
+            self.distinationLocation_label.setText("Scan Distination Location...")
+            self.distinationLocation_label.setStyleSheet("QLabel { background-color : lightgray; border: 1px solid black; }")
+            self.submit_button.setEnabled(False)
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -218,9 +321,9 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.stacked_widget)
 
         self.home_page = HomePage(self)
-        self.putaway_page = PutawayPage()
+        self.putaway_page = PutawayPage(self)  # Pass MainWindow reference
         self.pickup_page = PickupPage()
-        self.location_transfer_page = LocationTransferPage()
+        self.location_transfer_page = LocationTransferPage(self)
 
         self.stacked_widget.addWidget(self.home_page)
         self.stacked_widget.addWidget(self.putaway_page)
@@ -238,12 +341,13 @@ class MainWindow(QMainWindow):
 
         self.kafka_log_producer = KafkaLogProducer(self.bootstrap_servers, self.log_topic)
 
+        # Start the consumer automatically
+        self.start_consumer()
+
     def start_consumer(self):
         if not self.kafka_color_consumer.isRunning():
             self.kafka_color_consumer.start()
             self.status_label.setText("Consumer Status: Running")
-            self.home_page.start_button.setEnabled(False)
-
 
     def switch_page(self, page_name):
         if page_name == "Home":
